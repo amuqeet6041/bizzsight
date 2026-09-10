@@ -1,0 +1,11 @@
+Order No,Created At,Customer Email,Qty,Grand Total,Unit Cost,Delivery Charges,Ad Spend,Order Status
+1001,2024-01-05,ali@gmail.com,2,"PKR 4,500",1200,250,300,Delivered
+1002,2024-01-06,sara@gmail.com,1,"PKR 2,200",800,250,150,Delivered
+1003,2024-01-06,ali@gmail.com,1,"PKR 2,250",1100,250,0,Delivered
+1004,2024-01-07,zain@gmail.com,3,"PKR 6,750",1050,250,400,Returned
+1005,2024-01-08,,1,"PKR 1,999",900,250,0,Delivered
+1006,2024-01-08,hina@gmail.com,2,"PKR 4,100",1000,250,200,Delivered
+1006,2024-01-08,hina@gmail.com,2,"PKR 4,100",1000,250,200,Delivered
+1007,not_a_date,bilal@gmail.com,1,"PKR 2,500",1200,250,0,Cancelled
+1008,2024-01-09,sara@gmail.com,1,"PKR 2,300",850,250,0,Delivered
+1009,2024-01-10,ahmed@gmail.com,5,"PKR 45,000",1100,250,600,Delivered

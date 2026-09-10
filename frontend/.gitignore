@@ -1,0 +1,74 @@
+# ==========================================
+# Next.js
+# ==========================================
+
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+
+# Next.js environment files
+frontend/.env
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# ==========================================
+# Python
+# ==========================================
+
+python-service/__pycache__/
+python-service/**/*.pyc
+python-service/.pytest_cache/
+python-service/.mypy_cache/
+
+# Python virtual environments
+python-service/venv/
+python-service/.venv/
+python-service/env/
+
+# Environment files
+python-service/.env
+
+# ==========================================
+# General environment / secrets
+# ==========================================
+
+.env
+.env.local
+.env.*.local
+
+# ==========================================
+# OS files
+# ==========================================
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ==========================================
+# IDE / Editor
+# ==========================================
+
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+.idea/
+
+# ==========================================
+# Logs
+# ==========================================
+
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# ==========================================
+# Temporary files
+# ==========================================
+
+*.tmp
+*.temp
+*.swp
