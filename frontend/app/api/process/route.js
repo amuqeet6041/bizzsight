@@ -14,6 +14,15 @@ export async function POST(request) {
     forwardData.append("file", file, file.name);
     forwardData.append("mapping", mapping);
 
+    // Optional chart-window controls (driven by the results-page filters so the
+    // backend stays the source of truth for filtered chart specs).
+    ["date_start", "date_end", "group_by", "compare"].forEach((key) => {
+      const value = formData.get(key);
+      if (value !== null && value !== undefined && value !== "") {
+        forwardData.append(key, value);
+      }
+    });
+
     const pythonRes = await fetch(`${PYTHON_SERVICE_URL}/process`, {
       method: "POST",
       body: forwardData,

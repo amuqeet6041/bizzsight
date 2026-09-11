@@ -17,6 +17,7 @@ from pipeline.mapping import STANDARD_FIELDS
 _ROLE_TO_STANDARD: dict[str, str] = {
     "date":        "order_date",
     "revenue":     "revenue",
+    "price":       "unit_price",
     "quantity":    "quantity",
     "cost":        "cost_of_goods",
     "shipping":    "shipping_cost",
@@ -40,7 +41,7 @@ _DIMENSION_ONLY_ROLES = {
 
 # Roles that represent numeric measures
 _NUMERIC_MEASURE_ROLES = {
-    "revenue", "quantity", "price", "cost", "shipping",
+    "revenue", "quantity", "unit_price", "price", "cost", "shipping",
     "marketing", "discount", "tax", "profit",
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 
 import {
@@ -18,6 +18,9 @@ import {
   Pie,
   Cell,
 } from "recharts";
+
+import IntelligenceSection from "../components/IntelligenceSection";
+import ChartSection from "../components/ChartSection";
 
 export default function AnalyzePage() {
   const [file, setFile] = useState(null);
@@ -39,6 +42,121 @@ export default function AnalyzePage() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [chartRefreshing, setChartRefreshing] = useState(false);
+
+  // Chart-spec refresh bookkeeping: after the initial /process succeeds we
+  // remember the filter state it was generated with; when the user later
+  // changes a filter/slicer we re-request the chart specs from the backend so
+  // the on-screen charts always match the selected window.
+  const initialLoadDone = useRef(false);
+  const lastFilterSignature = useRef("");
+
+  const filterSignature = () => {
+    const parts = [dateRange, groupBy, compare];
+    if (dateRange === "custom") parts.push(customStart, customEnd);
+    return parts.join("|");
+  };
+
+  // A backend metric is displayed only when the backend says it is AVAILABLE.
+  // Missing data must never be surfaced as $0 / "No data" on the frontend.
+  const metricAvailable = (key) => resultData?.metric_status?.[key]?.status === "AVAILABLE";
+
+  // --------------------------------------------------
+  // BACKEND RESPONSE NORMALIZATION
+  //
+  // The backend is the source of truth. These derived values are pure view
+  // transformations of the /process response; no business metrics are
+  // recomputed in the frontend.
+  // --------------------------------------------------
+
+  const metricValues = resultData?.metric_values || {};
+  const metricStatus = resultData?.metric_status || {};
+  const metricDefinitions = resultData?.metric_definitions || {};
+  const structuredInsights = Array.isArray(resultData?.structured_insights)
+    ? resultData.structured_insights
+    : [];
+  const advisor = resultData?.advisor;
+
+  const chartSpecsPrevious = Array.isArray(resultData?.chart_specs_previous)
+    ? resultData.chart_specs_previous
+    : [];
+
+  const prevSeriesLabelFor =
+    compare === "previous_year" ? "Previous Year" : "Previous Period";
+
+  const chartSpecs = (() => {
+    const base = Array.isArray(resultData?.chart_specs)
+      ? resultData.chart_specs
+      : [];
+    // When a comparison is active the backend returns `chart_specs_previous`
+    // with aligned period labels. Merge the previous series into each
+    // current-spec as `prev_*` keys so every chart renderer gets both
+    // periods without re-implementing the overlay logic itself.
+    if (
+      compare === "none" ||
+      chartSpecsPrevious.length === 0 ||
+      base.length === 0
+    )
+      return base;
+    const prevById = {};
+    chartSpecsPrevious.forEach((s) => {
+      if (s?.id) prevById[s.id] = s;
+    });
+    return base.map((spec) => {
+      if (spec.type !== "line" && spec.type !== "area") return spec;
+      const prev = prevById[spec.id];
+      if (!prev || !Array.isArray(prev.data)) return spec;
+      const series = Array.isArray(spec.series) ? spec.series : [];
+      if (!series.length) return spec;
+      const xKey = spec.x_key || "period";
+      const prevRows = new Map(
+        prev.data.map((r) => [r?.[xKey], r])
+      );
+      const data = spec.data.map((row) => {
+        const p = prevRows.get(row?.[xKey]) || {};
+        const merged = { ...row };
+        series.forEach((s) => {
+          const v = p[s.key];
+          merged[`prev_${s.key}`] =
+            v === undefined || v === null ? null : v;
+        });
+        return merged;
+      });
+      const extraSeries = series.map((s) => ({
+        key: `prev_${s.key}`,
+        label: `${s.label} (${prevSeriesLabelFor})`,
+        dashed: true,
+      }));
+      return {
+        ...spec,
+        data,
+        series: [...series, ...extraSeries],
+      };
+    });
+  })();
+
+  const chartSummary = resultData?.chart_summary || {};
+
+  const chartSpecsByCategory = {};
+  chartSpecs.forEach((spec) => {
+    const category = spec?.category || "financial";
+    if (!chartSpecsByCategory[category]) {
+      chartSpecsByCategory[category] = [];
+    }
+    chartSpecsByCategory[category].push(spec);
+  });
+
+  const chartCategoryOrder = [
+    "financial",
+    "product",
+    "customer",
+    "geography",
+    "operations",
+  ];
+
+  const orderedChartCategories = chartCategoryOrder.filter(
+    (category) => (chartSpecsByCategory[category] || []).length > 0
+  );
 
   // --------------------------------------------------
   // FILE VALIDATION
@@ -224,6 +342,11 @@ export default function AnalyzePage() {
 
       setResultData(data);
 
+      // Remember the filter state this result was generated for so a later
+      // filter change can trigger a chart-spec-only refresh.
+      initialLoadDone.current = true;
+      lastFilterSignature.current = filterSignature();
+
       setStep("results");
     } catch (err) {
       console.error("PROCESS ERROR:", err);
@@ -254,6 +377,8 @@ export default function AnalyzePage() {
     setCustomEnd("");
     setGroupBy("monthly");
     setCompare("none");
+    initialLoadDone.current = false;
+    lastFilterSignature.current = "";
   };
 
   // --------------------------------------------------
@@ -527,6 +652,59 @@ export default function AnalyzePage() {
     return { start: prevStart, end: prevEnd };
   };
 
+  const refreshCharts = async () => {
+    if (!file || !hasDateData) return;
+    const range = getRangeBounds();
+    if (!range) return;
+    setChartRefreshing(true);
+    setError("");
+    try {
+      const confirmedMapping = {};
+      Object.entries(mapping).forEach(([column, field]) => {
+        if (field) confirmedMapping[column] = field;
+      });
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("mapping", JSON.stringify(confirmedMapping));
+      formData.append("date_start", toISOString(range.start));
+      formData.append("date_end", toISOString(range.end));
+      formData.append("group_by", groupBy);
+      formData.append("compare", compare);
+
+      const response = await fetch("/api/process", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(
+          data?.details || data?.error || "Unable to process your data."
+        );
+      }
+
+      setResultData(data);
+      lastFilterSignature.current = filterSignature();
+    } catch (err) {
+      console.error("CHART REFRESH ERROR:", err);
+      // Keep the previous result on screen; never wipe the dashboard.
+      setError("Unable to update charts for the selected filters.");
+    } finally {
+      setChartRefreshing(false);
+    }
+  };
+
+  // Re-request chart specs from the backend whenever the user changes a filter,
+  // grouping mode or comparison. KPI cards / insights keep using the windowed
+  // daily timeline client-side; only the charts are regenerated by the backend
+  // so the two can never disagree about which window they cover.
+  useEffect(() => {
+    if (!initialLoadDone.current) return;
+    if (filterSignature() === lastFilterSignature.current) return;
+    refreshCharts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateRange, customStart, customEnd, groupBy, compare]);
+
   const bucketKeyOf = (dateText, mode) => {
     const date = parseISO(dateText);
     if (!date) return null;
@@ -597,23 +775,28 @@ export default function AnalyzePage() {
         cogs: 0,
         shipping: 0,
         marketing: 0,
+        gross_profit: 0,
+        net_profit: 0,
         orders: 0,
       };
       bucket.revenue += toNumber(record.revenue);
       bucket.cogs += toNumber(record.cogs);
       bucket.shipping += toNumber(record.shipping);
       bucket.marketing += toNumber(record.marketing);
+      bucket.gross_profit += toNumber(record.gross_profit);
+      bucket.net_profit += toNumber(record.net_profit);
       bucket.orders += toNumber(record.orders);
       buckets.set(key, bucket);
     });
 
     const keys = Array.from(buckets.keys()).sort();
 
+    // Gross / net profit are summed from the backend's per-day values
+    // (revenue - cogs, and revenue - cogs - shipping - marketing). They are
+    // never recomputed here — and when the backend marks them unavailable the
+    // series carries null, so the UI never paints a fabricated $0 line.
     return keys.map((key) => {
       const bucket = buckets.get(key);
-      const grossProfit =
-        bucket.revenue - bucket.cogs - bucket.shipping;
-      const netProfit = grossProfit - bucket.marketing;
 
       return {
         month: bucketLabelOf(key, mode),
@@ -621,8 +804,12 @@ export default function AnalyzePage() {
         cogs: bucket.cogs,
         shipping: bucket.shipping,
         marketing: bucket.marketing,
-        gross_profit: grossProfit,
-        net_profit: netProfit,
+        gross_profit: metricAvailable("gross_profit")
+          ? bucket.gross_profit
+          : null,
+        net_profit: metricAvailable("net_profit")
+          ? bucket.net_profit
+          : null,
         orders: bucket.orders,
       };
     });
@@ -701,6 +888,12 @@ export default function AnalyzePage() {
         activeSeries.previous
       )
     : resultData?.chart_data?.revenue_trend || [];
+
+  // Revenue/gross/net visibility mirrors the backend metric availability so the
+  // legacy fallback charts never paint a fabricated $0 line for a metric the
+  // data cannot actually support (e.g. net profit without shipping data).
+  const netProfitVisible = metricAvailable("net_profit");
+  const grossProfitVisible = metricAvailable("gross_profit");
 
   const ordersTrend = revenueTrend.map((record) => ({
     month: record.month,
@@ -784,6 +977,8 @@ export default function AnalyzePage() {
         totals.cogs += toNumber(record.cogs);
         totals.shipping += toNumber(record.shipping);
         totals.marketing += toNumber(record.marketing);
+        totals.gross_profit += toNumber(record.gross_profit);
+        totals.net_profit += toNumber(record.net_profit);
         totals.orders += toNumber(record.orders);
         totals.cancelled += toNumber(record.cancelled);
         return totals;
@@ -793,6 +988,8 @@ export default function AnalyzePage() {
         cogs: 0,
         shipping: 0,
         marketing: 0,
+        gross_profit: 0,
+        net_profit: 0,
         orders: 0,
         cancelled: 0,
       }
@@ -819,25 +1016,37 @@ export default function AnalyzePage() {
     );
   })();
 
+  // Totals are assembled from the backend's per-day aggregates. Gross / net
+  // profit are taken directly from `daily_timeline` (the backend already
+  // computed revenue - cogs - shipping - marketing there) and are null whenever
+  // the backend reports those metrics NOT_AVAILABLE — never an implied zero.
   const deriveTotals = (totals) => {
     if (!totals) return null;
-    const grossProfit =
-      totals.revenue - totals.cogs - totals.shipping;
     return {
-      revenue: totals.revenue,
-      cogs: totals.cogs,
-      shipping: totals.shipping,
-      marketing: totals.marketing,
+      revenue: metricAvailable("revenue") ? totals.revenue : null,
+      cogs: metricAvailable("cogs") ? totals.cogs : null,
+      shipping: metricAvailable("shipping") ? totals.shipping : null,
+      marketing: metricAvailable("marketing")
+        ? totals.marketing
+        : null,
       orders: totals.orders,
       cancelled: totals.cancelled,
-      gross_profit: grossProfit,
-      net_profit: grossProfit - totals.marketing,
-      aov: totals.orders > 0 ? totals.revenue / totals.orders : 0,
+      gross_profit: metricAvailable("gross_profit")
+        ? totals.gross_profit
+        : null,
+      net_profit: metricAvailable("net_profit")
+        ? totals.net_profit
+        : null,
+      aov:
+        metricAvailable("revenue") && totals.orders > 0
+          ? totals.revenue / totals.orders
+          : null,
       return_rate:
+        metricAvailable("return_cancel_rate") &&
         totals.orders + totals.cancelled > 0
           ? totals.cancelled /
             (totals.orders + totals.cancelled)
-          : 0,
+          : null,
     };
   };
 
@@ -905,6 +1114,7 @@ export default function AnalyzePage() {
 
   const formatMoney = (value) => {
     const num = Number(value);
+    if (value === null || value === undefined) return "N/A";
     if (!Number.isFinite(num)) return "N/A";
     return `$${num.toLocaleString(undefined, {
       minimumFractionDigits: 2,
@@ -914,6 +1124,7 @@ export default function AnalyzePage() {
 
   const formatPercent = (value) => {
     const num = Number(value);
+    if (value === null || value === undefined) return "N/A";
     if (!Number.isFinite(num)) return "N/A";
     return `${(num * 100).toFixed(1)}%`;
   };
@@ -1240,14 +1451,19 @@ export default function AnalyzePage() {
 
     const notes = [];
 
-    if (periodDerived.net_profit < 0) {
+    if (
+      periodDerived.net_profit != null &&
+      periodDerived.net_profit < 0
+    ) {
       notes.push(
         "⚠️ Net profit is negative for this period — total costs currently exceed revenue."
       );
     }
 
     const cacValue =
-      customerAnalysis && customerAnalysis.newCustomers > 0
+      periodDerived.marketing != null &&
+      customerAnalysis &&
+      customerAnalysis.newCustomers > 0
         ? periodDerived.marketing / customerAnalysis.newCustomers
         : null;
 
@@ -1261,7 +1477,7 @@ export default function AnalyzePage() {
       );
     }
 
-    if (periodDerived.return_rate > 0.15) {
+    if (periodDerived.return_rate != null && periodDerived.return_rate > 0.15) {
       notes.push(
         `⚠️ Return/Cancel rate is ${formatPercent(
           periodDerived.return_rate
@@ -1744,6 +1960,17 @@ export default function AnalyzePage() {
               </button>
 
               <button
+                onClick={() => setAnalysisTab("intelligence")}
+                className={`flex-1 sm:flex-none rounded-lg px-6 py-2.5 text-sm font-medium transition whitespace-nowrap ${
+                  analysisTab === "intelligence"
+                    ? "bg-emerald-400 text-black"
+                    : "text-gray-400 hover:text-white hover:bg-white/5"
+                }`}
+              >
+                Business Intelligence
+              </button>
+
+              <button
                 onClick={() => setAnalysisTab("graphical")}
                 className={`flex-1 sm:flex-none rounded-lg px-6 py-2.5 text-sm font-medium transition whitespace-nowrap ${
                   analysisTab === "graphical"
@@ -1871,6 +2098,29 @@ export default function AnalyzePage() {
                   )}
                 </div>
 
+              </div>
+            )}
+
+            {/* ==================================================
+                BUSINESS INTELLIGENCE
+                (backend metric_values / metric_status, structured
+                insights and AI advisor)
+            ================================================== */}
+
+            {analysisTab === "intelligence" && (
+              <div>
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                  <span className="text-sm font-medium text-emerald-400">
+                    BUSINESS INTELLIGENCE
+                  </span>
+                </div>
+
+                <h2 className="text-3xl md:text-4xl font-bold tracking-tight mb-8">
+                  Intelligence Overview
+                </h2>
+
+                <IntelligenceSection resultData={resultData} />
               </div>
             )}
 
@@ -2662,6 +2912,47 @@ export default function AnalyzePage() {
 
                 </div>
 
+                {/* ==================================================
+                    DYNAMIC CHART ENGINE (chart_specs)
+                ================================================== */}
+
+                {chartSpecs.length > 0 ? (
+                  <div>
+                    <div className="mb-8 text-xs text-gray-500">
+                      {chartSummary.total ?? chartSpecs.length} visualizations
+                      {dateRange !== "all"
+                        ? " in the selected range"
+                        : " for this dataset"}
+                      {chartRefreshing && (
+                        <span className="ml-2 text-emerald-400">
+                          · updating charts…
+                        </span>
+                      )}
+                    </div>
+
+                    {orderedChartCategories.length > 0 ? (
+                      <>
+                        {orderedChartCategories.map((category) => (
+                          <ChartSection
+                            key={category}
+                            category={category}
+                            specs={chartSpecsByCategory[category]}
+                          />
+                        ))}
+
+                        <div className="mt-8 text-xs text-gray-500">
+                          Charts are generated by BizSight from the fields that
+                          were detected in your data.
+                        </div>
+                      </>
+                    ) : (
+                      <div className="rounded-2xl border border-white/10 bg-[#0D1117] p-8 text-center text-gray-500">
+                        No visualizations are available for this dataset.
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <>
                 {/* Revenue vs Net Profit */}
 
                 <ChartCard
@@ -2669,10 +2960,12 @@ export default function AnalyzePage() {
                   description="Revenue and net profit performance over time"
                 >
 
-                  {hasChartData(revenueTrend, [
-                    "revenue",
-                    "net_profit",
-                  ]) ? (
+                  {hasChartData(
+                    revenueTrend,
+                    netProfitVisible
+                      ? ["revenue", "net_profit"]
+                      : ["revenue"]
+                  ) ? (
 
                     <div className="w-full h-[350px]">
 
@@ -2730,15 +3023,17 @@ export default function AnalyzePage() {
                             activeDot={{ r: 6 }}
                           />
 
-                          <Line
-                            type="monotone"
-                            dataKey="net_profit"
-                            name="Net Profit"
-                            stroke="#60A5FA"
-                            strokeWidth={3}
-                            dot={{ r: 4 }}
-                            activeDot={{ r: 6 }}
-                          />
+                          {netProfitVisible && (
+                            <Line
+                              type="monotone"
+                              dataKey="net_profit"
+                              name="Net Profit"
+                              stroke="#60A5FA"
+                              strokeWidth={3}
+                              dot={{ r: 4 }}
+                              activeDot={{ r: 6 }}
+                            />
+                          )}
 
                           {compareEnabled && (
                             <>
@@ -2752,15 +3047,17 @@ export default function AnalyzePage() {
                                 dot={false}
                               />
 
-                              <Line
-                                type="monotone"
-                                dataKey="prev_net_profit"
-                                name={`Net Profit (${prevSeriesLabel})`}
-                                stroke="#60A5FA"
-                                strokeWidth={2}
-                                strokeDasharray="5 5"
-                                dot={false}
-                              />
+                              {netProfitVisible && (
+                                <Line
+                                  type="monotone"
+                                  dataKey="prev_net_profit"
+                                  name={`Net Profit (${prevSeriesLabel})`}
+                                  stroke="#60A5FA"
+                                  strokeWidth={2}
+                                  strokeDasharray="5 5"
+                                  dot={false}
+                                />
+                              )}
                             </>
                           )}
 
@@ -2969,10 +3266,12 @@ export default function AnalyzePage() {
                     description="Gross profit compared with net profit over time"
                   >
 
-                    {hasChartData(revenueTrend, [
-                      "gross_profit",
-                      "net_profit",
-                    ]) ? (
+                    {hasChartData(
+                      revenueTrend,
+                      grossProfitVisible || netProfitVisible
+                        ? ["gross_profit", "net_profit"]
+                        : ["revenue"]
+                    ) ? (
 
                       <div className="w-full h-[300px]">
 
@@ -3020,47 +3319,55 @@ export default function AnalyzePage() {
 
                             <Legend />
 
-                            <Line
-                              type="monotone"
-                              dataKey="gross_profit"
-                              name="Gross Profit"
-                              stroke="#A78BFA"
-                              strokeWidth={3}
-                              dot={{ r: 4 }}
-                              activeDot={{ r: 6 }}
-                            />
+                            {grossProfitVisible && (
+                              <Line
+                                type="monotone"
+                                dataKey="gross_profit"
+                                name="Gross Profit"
+                                stroke="#A78BFA"
+                                strokeWidth={3}
+                                dot={{ r: 4 }}
+                                activeDot={{ r: 6 }}
+                              />
+                            )}
 
-                            <Line
-                              type="monotone"
-                              dataKey="net_profit"
-                              name="Net Profit"
-                              stroke="#60A5FA"
-                              strokeWidth={3}
-                              dot={{ r: 4 }}
-                              activeDot={{ r: 6 }}
-                            />
+                            {netProfitVisible && (
+                              <Line
+                                type="monotone"
+                                dataKey="net_profit"
+                                name="Net Profit"
+                                stroke="#60A5FA"
+                                strokeWidth={3}
+                                dot={{ r: 4 }}
+                                activeDot={{ r: 6 }}
+                              />
+                            )}
 
                             {compareEnabled && (
                               <>
-                                <Line
-                                  type="monotone"
-                                  dataKey="prev_gross_profit"
-                                  name={`Gross Profit (${prevSeriesLabel})`}
-                                  stroke="#A78BFA"
-                                  strokeWidth={2}
-                                  strokeDasharray="5 5"
-                                  dot={false}
-                                />
+                                {grossProfitVisible && (
+                                  <Line
+                                    type="monotone"
+                                    dataKey="prev_gross_profit"
+                                    name={`Gross Profit (${prevSeriesLabel})`}
+                                    stroke="#A78BFA"
+                                    strokeWidth={2}
+                                    strokeDasharray="5 5"
+                                    dot={false}
+                                  />
+                                )}
 
-                                <Line
-                                  type="monotone"
-                                  dataKey="prev_net_profit"
-                                  name={`Net Profit (${prevSeriesLabel})`}
-                                  stroke="#60A5FA"
-                                  strokeWidth={2}
-                                  strokeDasharray="5 5"
-                                  dot={false}
-                                />
+                                {netProfitVisible && (
+                                  <Line
+                                    type="monotone"
+                                    dataKey="prev_net_profit"
+                                    name={`Net Profit (${prevSeriesLabel})`}
+                                    stroke="#60A5FA"
+                                    strokeWidth={2}
+                                    strokeDasharray="5 5"
+                                    dot={false}
+                                  />
+                                )}
                               </>
                             )}
 
@@ -3524,6 +3831,8 @@ export default function AnalyzePage() {
                   </ChartCard>
 
                 </div>
+                  </>
+                )}
 
               </div>
             )}

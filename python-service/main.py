@@ -27,6 +27,7 @@ from pipeline.metrics import (
     compute_customer_data,
     compute_product_data,
     evaluate_metrics,
+    _ensure_dates,
     METRIC_DEFINITIONS,
 )
 from pipeline.insights import (
@@ -68,6 +69,48 @@ def _safe_preview(df: pd.DataFrame, n: int = 20):
             preview_df[col] = preview_df[col].dt.strftime("%Y-%m-%d")
     preview_df = preview_df.fillna("").astype(str)
     return preview_df.to_dict(orient="records")
+
+
+def _date_segment(df: pd.DataFrame, start: str, end: str):
+    """Inclusive [start, end] ISO-date window over the cleaned dataframe.
+
+    Returns a dated-only subset. An empty/unknown bound means "no filter"
+    (used by datasets without usable dates and by the initial frontend call).
+    """
+    if not start or not end:
+        return df
+    dated = _ensure_dates(df)
+    if dated.empty:
+        return dated
+    start_dt = pd.to_datetime(start, errors="coerce")
+    end_dt = pd.to_datetime(end, errors="coerce")
+    if pd.isna(start_dt) or pd.isna(end_dt):
+        return df
+    mask = (dated["order_date"] >= start_dt) & (dated["order_date"] <= end_dt)
+    return dated[mask]
+
+
+def _previous_window(start: str, end: str, compare: str):
+    """Previous comparison [start, end] window for the current one.
+
+    previous_period: the equal-length, immediately preceding window.
+    previous_year:   the same calendar dates one year earlier.
+    Returns (prev_start, prev_end) ISO dates, or (None, None) when not computable.
+    """
+    if not start or not end:
+        return None, None
+    start_dt = pd.to_datetime(start, errors="coerce")
+    end_dt = pd.to_datetime(end, errors="coerce")
+    if pd.isna(start_dt) or pd.isna(end_dt):
+        return None, None
+    if compare == "previous_year":
+        prev_start = start_dt - pd.DateOffset(years=1)
+        prev_end = end_dt - pd.DateOffset(years=1)
+    else:  # previous_period
+        span_days = (end_dt - start_dt).days + 1
+        prev_end = start_dt - pd.Timedelta(days=1)
+        prev_start = prev_end - pd.Timedelta(days=span_days - 1)
+    return prev_start.strftime("%Y-%m-%d"), prev_end.strftime("%Y-%m-%d")
 
 
 @app.get("/health")
@@ -240,7 +283,14 @@ async def capabilities_endpoint(
 
 
 @app.post("/process")
-async def process_endpoint(file: UploadFile = File(...), mapping: str = Form(...)):
+async def process_endpoint(
+    file: UploadFile = File(...),
+    mapping: str = Form(...),
+    date_start: str = Form(""),
+    date_end: str = Form(""),
+    group_by: str = Form("daily"),
+    compare: str = Form("none"),
+):
     """
     Takes the uploaded file again plus the user-confirmed mapping (JSON string,
     e.g. '{"Order No": "order_id", "Grand Total": "revenue"}'), and returns:
@@ -249,6 +299,14 @@ async def process_endpoint(file: UploadFile = File(...), mapping: str = Form(...
       - the metrics (raw + display-formatted)
       - auto-generated insights
       - a base64-encoded Excel file (Orders + Metrics sheets) for Power BI export
+
+    Optional chart-window params (used when the user narrows the date range /
+    changes grouping / turns on comparison on the frontend):
+      - date_start / date_end : inclusive ISO-date window for chart_specs
+      - group_by              : daily/weekly/monthly/quarterly/yearly
+      - compare               : none / previous_period / previous_year
+    Chart specs are generated over the selected window; `chart_specs_previous`
+    carries the comparison window's specs so the frontend can overlay them.
     """
     import json
 
@@ -300,13 +358,42 @@ async def process_endpoint(file: UploadFile = File(...), mapping: str = Form(...
     # returns validated chart specifications. It never invents data. The legacy
     # `chart_data` field is preserved untouched so the current frontend keeps
     # working; `chart_specs` is the new, renderer-agnostic contract.
+    #
+    # When the frontend has selected a date window / grouping mode, chart specs
+    # are generated over that window. With no window (initial call, no-date
+    # datasets) this is exactly the full-dataset chart list.
+    chart_df = _date_segment(cleaned_df, date_start, date_end)
+
     chart_specs = generate_chart_specs(
-        cleaned_df,
+        chart_df,
         mapping=confirmed_mapping,
         metric_values=metric_values,
         metric_status=metric_status,
+        grouping=group_by or "monthly",
     )
     chart_summary = summarize_chart_specs(chart_specs)
+
+    chart_specs_previous = []
+    applied_filters = bool(date_start and date_end)
+    if compare and compare != "none":
+        prev_start, prev_end = _previous_window(date_start, date_end, compare)
+        if prev_start:
+            prev_df = _date_segment(cleaned_df, prev_start, prev_end)
+            chart_specs_previous = generate_chart_specs(
+                prev_df,
+                mapping=confirmed_mapping,
+                metric_values=metric_values,
+                metric_status=metric_status,
+                grouping=group_by or "monthly",
+            )
+
+    chart_filters = {
+        "date_start": date_start or None,
+        "date_end": date_end or None,
+        "group_by": group_by or "monthly",
+        "compare": compare or "none",
+        "applied": applied_filters,
+    }
 
     # Phase 7: Business Advisor. Python builds a sanitized, verified fact pack
     # from the artifacts above; the LLM (or the deterministic mock provider)
@@ -357,6 +444,8 @@ async def process_endpoint(file: UploadFile = File(...), mapping: str = Form(...
         "structured_insights": structured_insights,
         "insight_summary": insight_summary,
         "chart_specs": chart_specs,
+        "chart_specs_previous": chart_specs_previous,
+        "chart_filters": chart_filters,
         "chart_summary": chart_summary,
         "advisor": advisor,
         "excel_file_base64": excel_base64,

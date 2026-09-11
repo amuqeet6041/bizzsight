@@ -63,6 +63,16 @@ export default function MappingReview({
           {columns.map((col) => {
             const suggestion = suggestions[col];
             const confidence = suggestion?.confidence || 0;
+            // A standard field can be assigned to exactly one column. Fields
+            // already chosen by another column are hidden here so the user can
+            // never double-map (e.g. UnitPrice + Revenue both -> revenue),
+            // which previously double-counted financial metrics upstream.
+            const chosenByOthers = Object.entries(mapping)
+              .filter(([key, value]) => key !== col && value)
+              .map(([, value]) => value);
+            const availableFields = standardFields.filter(
+              (field) => !chosenByOthers.includes(field)
+            );
             return (
               <div key={col} className="flex items-center justify-between gap-3 rounded-lg border p-3">
                 <div className="min-w-0 flex-1">
@@ -77,7 +87,7 @@ export default function MappingReview({
                   className="rounded-md border border-gray-300 px-2 py-1 text-sm"
                 >
                   <option value="(ignore)">(ignore)</option>
-                  {standardFields.map((field) => (
+                  {availableFields.map((field) => (
                     <option key={field} value={field}>
                       {field}
                     </option>

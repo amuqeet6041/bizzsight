@@ -168,6 +168,7 @@ def _period_label(dt, grouping):
 def _grouped_delivered(df, grouping):
     """Delivered rows annotated with their period label (chronological)."""
     d = _delivered(_ensure_dates(df))
+
     if d is None or d.empty:
         return d
     d = d.copy()
@@ -348,31 +349,76 @@ def _net_ok(ctx):
     ok = _metric_ok(ctx.metric_status, "net_profit")
     if ok is not None:
         return ok
-    return all(_usable(ctx.df, f, "measure") for f in ("revenue", "cost_of_goods", "shipping_cost", "marketing_spend"))
 
+    return all(
+        _usable(ctx.df, f, "measure")
+        for f in (
+            "revenue",
+            "cost_of_goods",
+            "marketing_spend",
+        )
+    )
 
 def _g_net_profit_trend(ctx):
     if not _date_usable(ctx.df) or not _net_ok(ctx):
-        return _none("Required metric net_profit is unavailable (missing expense data is never assumed to be zero).")
+        return _none(
+            "Required metric net_profit is unavailable "
+            "(revenue, COGS and marketing are required)."
+        )
+
     data = _combo_trend(
         _delivered(ctx.df),
-        ("revenue", "cost_of_goods", "shipping_cost", "marketing_spend"),
+        ("revenue", "cost_of_goods", "marketing_spend"),
         ctx.grouping,
-        lambda v: v["revenue"] - v["cost_of_goods"] - v["shipping_cost"] - v["marketing_spend"],
+        lambda v:
+            v["revenue"]
+            - v["cost_of_goods"]
+            - v["marketing_spend"],
     )
+
     if not data:
-        return _insufficient("No usable net profit periods were found.")
-    rows = [{"period": p, "net_profit": _money_v(v)} for p, v in data.items()]
-    return ("AVAILABLE", _chart_spec(
-        "net_profit_trend", "line", "financial", "Net Profit Trend",
-        "Net profit (revenue minus COGS, shipping and marketing) over time.",
-        "high", _VALUE_FORMAT_CURRENCY,
-        ("order_date", "revenue", "cost_of_goods", "shipping_cost", "marketing_spend"),
-        ("net_profit",),
-        "period", [{"key": "net_profit", "label": "Net Profit"}], rows,
-        ["order_date", "revenue", "cost_of_goods", "shipping_cost", "marketing_spend"],
-        sort="period_asc",
-    ), None)
+        return _insufficient(
+            "No usable net profit periods were found."
+        )
+
+    rows = [
+        {
+            "period": p,
+            "net_profit": _money_v(v),
+        }
+        for p, v in data.items()
+    ]
+
+    return (
+        "AVAILABLE",
+        _chart_spec(
+            "net_profit_trend",
+            "line",
+            "financial",
+            "Net Profit Trend",
+            "Net profit (revenue minus COGS and marketing) over time.",
+            "high",
+            _VALUE_FORMAT_CURRENCY,
+            (
+                "order_date",
+                "revenue",
+                "cost_of_goods",
+                "marketing_spend",
+            ),
+            ("net_profit",),
+            "period",
+            [{"key": "net_profit", "label": "Net Profit"}],
+            rows,
+            [
+                "order_date",
+                "revenue",
+                "cost_of_goods",
+                "marketing_spend",
+            ],
+            sort="period_asc",
+        ),
+        None,
+    )
 
 
 def _margin_trend(ctx, key, cid, title, description, priority):
@@ -822,9 +868,8 @@ def generate_chart_specs(
         try:
             status, spec, _reason = entry["generator"](ctx)
         except Exception:
-            # A chart failure must never destroy the analysis. Log-free: the
-            # chart is simply omitted; generate_chart_specs stays total.
             continue
+
         if status == "AVAILABLE" and spec is not None:
             specs.append(spec)
     specs.sort(key=lambda s: (_PRIORITY_RANK.get(s["priority"], 2), s["id"]))
