@@ -17,6 +17,12 @@ STANDARD_FIELDS = [
     "shipping_cost",
     "marketing_spend",
     "status",
+    "city",
+    "country",
+    "region",
+    "payment",
+    "channel",
+    "category",
 ]
 
 # Common real-world column name variations for each standard field.
@@ -32,6 +38,12 @@ ALIASES = {
     "shipping_cost": ["shipping", "delivery charges", "courier fee", "freight", "shipping cost"],
     "marketing_spend": ["ad spend", "marketing cost", "meta ads cost", "campaign spend", "ads cost"],
     "status": ["order status", "status", "delivery status", "fulfillment status"],
+    "city": ["city", "town", "location", "city name"],
+    "country": ["country", "nation", "country name"],
+    "region": ["region", "state", "province", "area", "emirate", "governorate"],
+    "payment": ["payment", "payment method", "pay method", "payment type", "tender", "payment mode"],
+    "channel": ["channel", "sales channel", "source", "platform", "channel name", "storefront"],
+    "category": ["category", "product category", "product type", "subcategory", "category name"],
 }
 
 

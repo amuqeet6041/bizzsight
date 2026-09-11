@@ -1,0 +1,7 @@
+Date,OrderID,CustomerID,Product,Quantity,Revenue,COGS,Shipping,Marketing,City,Country,Status,Payment,Channel
+2025-03-11,O-9001,C-7,Product X,3,225,150,10,5,Dubai,UAE,Completed,Credit Card,Online Store
+2025-03-19,O-9002,C-8,Product X,1,75,50,5,0,Abu Dhabi,UAE,Completed,Cash,Physical Store
+2025-03-27,O-9003,C-7,Product Y,2,120,80,5,10,Dubai,UAE,Completed,PayPal,Online Store
+2025-04-05,O-9004,C-9,Product Z,4,160,100,10,15,Sharjah,UAE,Completed,Card,Physical Store
+2025-04-14,O-9005,C-8,Product X,2,150,100,5,5,Dubai,UAE,Cancelled,Cash,Online Store
+2025-04-22,O-9006,C-9,Product Y,3,180,120,10,20,Sharjah,UAE,Completed,PayPal,Online Store

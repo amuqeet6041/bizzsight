@@ -1,0 +1,13 @@
+Date,OrderID,CustomerID,Product,Quantity,Revenue,COGS,Shipping,Marketing,City,Country,Status,Payment,Channel
+2026-01-03,ORD-201,C-01,Air Fryer,2,240,120,15,20,Dubai,UAE,Delivered,card,Shopify
+2026-01-05,ORD-202,C-02,Kettle,1,80,40,8,20,Abu Dhabi,UAE,Delivered,cod,Shopify
+2026-01-08,ORD-203,C-01,Blender,1,120,60,10,20,Dubai,UAE,Delivered,card,Amazon
+2026-01-12,ORD-204,C-03,Toaster,3,150,75,12,20,Sharjah,UAE,Delivered,card,Shopify
+2026-01-15,ORD-205,C-04,Air Fryer,1,120,60,8,20,Dubai,UAE,Cancelled,card,Amazon
+2026-01-20,ORD-206,C-02,Espresso Maker,1,220,110,15,20,Abu Dhabi,UAE,Delivered,cod,Tiktok Shop
+2026-02-02,ORD-207,C-01,Kettle,2,160,80,10,20,Dubai,UAE,Delivered,card,Shopify
+2026-02-10,ORD-208,C-05,Blender,1,120,60,10,20,Ras Al Khaimah,UAE,Delivered,card,Shopify
+2026-02-18,ORD-209,C-06,Toaster,1,50,25,6,20,Dubai,UAE,Delivered,paypal,Amazon
+2026-03-01,ORD-210,C-02,Espresso Maker,2,440,220,25,20,Sharjah,UAE,Delivered,card,Shopify
+2026-03-11,ORD-211,C-01,Air Fryer,1,120,60,8,20,Dubai,UAE,Delivered,card,Shopify
+2026-03-21,ORD-212,C-07,Juicer,3,210,105,18,20,Abu Dhabi,UAE,Delivered,cod,Tiktok Shop

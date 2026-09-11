@@ -1,0 +1,1 @@
+{"Order No":"order_id","Date":"order_date","Email":"customer_id","Product":"product_id","Quantity":"quantity","Total":"revenue","COGS":"cost_of_goods","Shipping":"shipping_cost","Marketing Cost":"marketing_spend","Status":"status"}

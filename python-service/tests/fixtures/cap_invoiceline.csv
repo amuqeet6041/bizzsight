@@ -1,0 +1,10 @@
+Date,InvoiceID,Product,Quantity,Revenue,COGS
+2026-01-04,INV-1,Air Fryer,1,120,60
+2026-01-04,INV-1,Kettle,1,80,40
+2026-01-11,INV-2,Blender,2,240,120
+2026-01-18,INV-3,Toaster,1,50,25
+2026-02-01,INV-4,Air Fryer,1,120,60
+2026-02-09,INV-5,Espresso Maker,1,220,110
+2026-02-16,INV-6,Kettle,3,240,120
+2026-03-02,INV-7,Juicer,1,70,35
+2026-03-14,INV-8,Blender,1,120,60
