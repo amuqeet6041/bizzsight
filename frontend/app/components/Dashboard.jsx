@@ -26,7 +26,14 @@ const CARD_METRICS = [
 
 const COLORS = ["#3b82f6", "#ef4444"];
 
-export default function Dashboard({ displayMetrics, rawMetrics, insights, onDownloadExcel, onReset }) {
+export default function Dashboard({
+  displayMetrics,
+  rawMetrics,
+  insights,
+  chartData,
+  onDownloadExcel,
+  onReset,
+}) {
   const costBreakdown = [
     { name: "COGS", value: rawMetrics["COGS"] || 0 },
     { name: "Shipping", value: rawMetrics["Shipping Cost"] || 0 },

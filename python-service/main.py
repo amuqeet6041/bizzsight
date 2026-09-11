@@ -14,8 +14,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from pipeline.mapping import suggest_column_mapping, STANDARD_FIELDS
 from pipeline.cleaning import clean_dataframe
-from pipeline.metrics import compute_metrics, generate_insights, format_metrics_for_display
-
+from pipeline.metrics import (
+    compute_metrics,
+    format_metrics_for_display,
+    generate_insights,
+    generate_chart_data,
+    generate_daily_timeline,
+    compute_customer_data,
+    compute_product_data,
+)
 app = FastAPI(title="SME Insights Pipeline Service")
 
 # Allow the Next.js dev server (and later, your deployed frontend) to call this API
@@ -101,6 +108,26 @@ async def process_endpoint(file: UploadFile = File(...), mapping: str = Form(...
     metrics = compute_metrics(cleaned_df)
     display_metrics = format_metrics_for_display(metrics)
     insights = generate_insights(metrics)
+    chart_data = generate_chart_data(cleaned_df)
+
+    daily_timeline = generate_daily_timeline(cleaned_df)
+    customer_data = compute_customer_data(cleaned_df)
+    product_data = compute_product_data(cleaned_df)
+
+    date_range = {}
+    if daily_timeline:
+        date_range = {
+            "min": daily_timeline[0]["date"],
+            "max": daily_timeline[-1]["date"],
+        }
+
+    fields_present = {
+        "has_date": "order_date" in cleaned_df.columns,
+        "has_customer": "customer_id" in cleaned_df.columns,
+        "has_product": "product_id" in cleaned_df.columns,
+        "has_quantity": "quantity" in cleaned_df.columns,
+        "has_status": "status" in cleaned_df.columns,
+    }
 
     # Build the same two-sheet Excel file as before, in-memory, for download
     metrics_wide_df = pd.DataFrame([metrics])
@@ -119,4 +146,10 @@ async def process_endpoint(file: UploadFile = File(...), mapping: str = Form(...
         "display_metrics": display_metrics,
         "insights": insights,
         "excel_file_base64": excel_base64,
+        "chart_data": chart_data,
+        "daily_timeline": daily_timeline,
+        "customer_data": customer_data,
+        "product_data": product_data,
+        "date_range": date_range,
+        "fields_present": fields_present,
     }
