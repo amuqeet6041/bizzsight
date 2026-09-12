@@ -252,14 +252,7 @@ export default function Navbar() {
           {/* MOBILE LINKS */}
           <div className="flex flex-col">
 
-            {/* FEATURES */}
-            <button
-              type="button"
-              onClick={() => scrollToSection("features")}
-              className="cursor-pointer border-b border-white/[0.06] py-4 text-left text-sm font-medium text-slate-300 hover:text-emerald-400"
-            >
-              Features
-            </button>
+           
 
             {/* HOW IT WORKS */}
             <button
@@ -270,23 +263,16 @@ export default function Navbar() {
               How It Works
             </button>
 
-            {/* ANALYTICS */}
+             {/* FEATURES */}
             <button
               type="button"
-              onClick={() => scrollToSection("analytics")}
+              onClick={() => scrollToSection("features")}
               className="cursor-pointer border-b border-white/[0.06] py-4 text-left text-sm font-medium text-slate-300 hover:text-emerald-400"
             >
-              Analytics
+              Features
             </button>
 
-            {/* POWER BI */}
-            <button
-              type="button"
-              onClick={() => scrollToSection("powerbi")}
-              className="cursor-pointer border-b border-white/[0.06] py-4 text-left text-sm font-medium text-slate-300 hover:text-emerald-400"
-            >
-              Power BI
-            </button>
+
 
           </div>
 
