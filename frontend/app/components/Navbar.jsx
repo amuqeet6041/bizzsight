@@ -115,14 +115,7 @@ export default function Navbar() {
         ============================================ */}
         <div className="hidden items-center gap-8 md:flex">
 
-          {/* FEATURES */}
-          <button
-            type="button"
-            onClick={() => scrollToSection("features")}
-            className="cursor-pointer text-sm font-medium text-slate-400 transition-colors duration-200 hover:text-white"
-          >
-            Features
-          </button>
+          
 
           {/* HOW IT WORKS */}
           <button
@@ -133,23 +126,17 @@ export default function Navbar() {
             How It Works
           </button>
 
-          {/* ANALYTICS */}
+          {/* FEATURES */}
           <button
             type="button"
-            onClick={() => scrollToSection("analytics")}
+            onClick={() => scrollToSection("features")}
             className="cursor-pointer text-sm font-medium text-slate-400 transition-colors duration-200 hover:text-white"
           >
-            Analytics
+            Features
           </button>
 
-          {/* POWER BI */}
-          <button
-            type="button"
-            onClick={() => scrollToSection("powerbi")}
-            className="cursor-pointer text-sm font-medium text-slate-400 transition-colors duration-200 hover:text-white"
-          >
-            Power BI
-          </button>
+        
+
 
         </div>
 
